@@ -1,0 +1,154 @@
+/*
+ * Copyright 2017 Josh Feldman
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+apply plugin: 'com.jfrog.bintray'
+apply plugin: 'com.github.dcendents.android-maven'
+
+// build a jar with source files
+task sourcesJar(type: Jar) {
+    from android.sourceSets.main.java.srcDirs
+    classifier = 'sources'
+}
+
+task javadoc(type: Javadoc) {
+    failOnError  false
+    source = android.sourceSets.main.java.sourceFiles
+    classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
+    classpath += configurations.compile
+}
+
+// build a jar with javadoc
+task javadocJar(type: Jar, dependsOn: javadoc) {
+    classifier = 'javadoc'
+    from javadoc.destinationDir
+}
+
+artifacts {
+    archives sourcesJar
+    archives javadocJar
+}
+
+def validateProperties(map, expectedKeys) {
+    if (!map) {
+        throw new IllegalArgumentException('map argument cannot be empty.')
+    }
+    expectedKeys.each { expectedKey ->
+        if (!map.containsKey(expectedKey)) { throw new IllegalArgumentException("${expectedKey} key must be specified") }
+    }
+}
+
+/**
+ * Configures maven's "install" task.
+ *
+ * @param map  A map containing the following configuration parameters:
+ *             - artifactId: The artifact id (e.g. library name) that will be used to publish this artifact.
+ *             - projectDescription: Text describing the use or purpose of the artifact that will be produced.
+ *             - gitUrl: Url of the git project where the artifact's source code can be obtained. Note that this url
+ *                       does not include the ".git" suffix.
+ *             - groupId: The artifact's maven groupId.
+ *             - versionNumber: The artifact's version number.
+ *             - licenseName: Full name of the license under which this artifact is covered (e.g. 'Mozilla Public License Version 2.0').
+ *             - licenseUrl: Url of the license file under which this artifact is covered (e.g. 'http://mozilla.org/MPL/2.0').
+ *             - developerId: Git username of the developer publishing this artifact.
+ *             - developerName: Name of the developer publishing this artifact.
+ */
+def configureMavenInstall(map) {
+    validateProperties(map, ['artifactId', 'projectDescription', 'gitUrl', 'groupId', 'versionNumber', 'licenseName', 'licenseUrl', 'developerId', 'developerName'])
+
+    if (!map.containsKey('projectInceptionYear')) {
+        map['projectInceptionYear'] = new Date()[Calendar.YEAR]
+    }
+
+    install {
+        repositories.mavenInstaller {
+            pom.project {
+                name map.artifactId
+                description map.projectDescription
+                url map.gitUrl
+                inceptionYear map.projectInceptionYear.toString()
+
+                packaging 'aar'
+                groupId map.groupId
+                artifactId map.artifactId
+                version map.versionNumber
+
+                licenses {
+                    license {
+                        name map.licenseName
+                        url map.licenseUrl
+                        distribution 'repo'
+                    }
+                }
+                scm {
+                    connection "${map.gitUrl}.git"
+                    url map.gitUrl
+                }
+                developers {
+                    developer {
+                        id = map.developerId
+                        name map.developerName
+                    }
+                }
+            }
+        }
+    }
+
+    group = map.groupId
+    version = map.versionNumber
+}
+
+/**
+ * Configures the bintray upload task.
+ *
+ * @param map  A map containing the following configuration parameters:
+ *             - user: The bintray username.
+ *             - key: The bintray key used for authentication.
+ *             - repoName: The bintray repository name.
+ *             - artifactId: The artifact id (e.g. package name) under which this artifact will be published.
+ *             - licenseId: Bintray license id under which this artifact is covered (e.g. 'LGPL-2.1').
+ *             - gitUrl: Url of the git project where the artifact's source code can be obtained. Note that this url
+ *                       does not include the ".git" suffix.
+ *             - versionNumber: The artifact's version number.
+ */
+def configureBintrayUpload(map) {
+    validateProperties(map, ['user', 'key', 'repoName', 'artifactId', 'licenseId', 'gitUrl', 'versionNumber'])
+
+    bintray {
+        user = map.user
+        key = map.key
+        configurations = ['archives']
+        pkg {
+            repo = map.repoName
+            name = map.artifactId
+            licenses = [map.licenseId]
+            vcsUrl = "${map.gitUrl}.git"
+            publish = true
+            version {
+                name = map.versionNumber
+                desc = "${map.artifactId} ${map.versionNumber}"
+                released = new Date()
+                vcsTag = map.gitTag ?: ''
+            }
+        }
+    }
+
+    // Important for ensuring this library project is not uploaded to bintray as a sub-project.
+    archivesBaseName = map.artifactId
+}
+
+ext {
+    configureMavenInstall = this.&configureMavenInstall
+    configureBintrayUpload = this.&configureBintrayUpload
+}
