@@ -146,6 +146,21 @@ def configureBintrayUpload(map) {
 
     // Important for ensuring this library project is not uploaded to bintray as a sub-project.
     archivesBaseName = map.artifactId
+
+    afterEvaluate { project ->
+        project.tasks.bintrayUpload.doLast {
+            /*
+             * As of bintray plugin 1.7.3, the bintrayUpload task fails silently if a user and key
+             * are not specified. Throw an exception here to mark these missing data as an error.
+             */
+            if (map.user == null) {
+                throw new InvalidUserDataException("bintrayUpload task requires a valid 'user' argument.")
+            }
+            if (map.key == null) {
+                throw new InvalidUserDataException("bintrayUpload task requires a valid 'key' argument.")
+            }
+        }
+    }
 }
 
 ext {
